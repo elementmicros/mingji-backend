@@ -1,9 +1,14 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 from lunar_python import Solar
-from prompt import build_prompt, SYSTEM_PROMPT
+from openai import OpenAI
 
 app = FastAPI(title="明己后端")
+
+# DeepSeek API 配置
+DEEPSEEK_API_KEY = "sk-36078f4869434a1584d3f1bd180ce72e"
+DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url=DEEPSEEK_BASE_URL)
 
 class BirthInput(BaseModel):
     year: int
@@ -14,6 +19,40 @@ class BirthInput(BaseModel):
     city: str = ""
     gender: str = "男"
     trouble: str = ""
+
+SYSTEM_PROMPT = """你是一个认识用户多年的老朋友，坐在夜市摊上跟他喝啤酒。你知道他是什么样的人，也看穿了他正在怎么骗自己。
+
+铁律：
+1. 所有分析必须指向用户自身。禁止把问题归因于他人。
+2. 不共情、不讨好、不用任何称呼套近乎。
+3. 不用任何命理术语，不用任何心理学专业名词。
+4. 每棍必须指向他刚写的困扰，用生活场景说话。
+5. 只输出三棍，每棍不超过两句话，之间空一行。
+6. 不要编号，不要标题，不要任何解释。
+7.根据用户写的困扰，自动判断他的身份角色。如果是抱怨领导、老板，他是被管理者；如果是抱怨下属、团队，他是管理者。禁止直接说"你的领导"或"你的下属"，用生活场景暗示关系。
+
+三棍的分量：
+- 第一棍：轻拍肩膀。精确指向他刚写的困扰，让他觉得"你在说我"。
+- 第二棍：加重力道。指出他一直回避的盲区，让他沉默几秒。
+- 第三棍：敲在头顶。从另一个维度重新定义他的问题，让他发现自己一直在跟自己较劲，然后释然。
+
+输出格式：只输出三句话，每句不超过两行。"""
+
+def build_user_prompt(bazi_data: dict, user_input: dict) -> str:
+    gender = user_input.get("gender", "男")
+    city = user_input.get("city", "")
+    trouble = user_input.get("trouble", "")
+    day_gan = bazi_data["dayGan"]
+    current_dayun = bazi_data["current_dayun"]
+    wuxing = bazi_data["wuxing"]
+    
+    wuxing_str = "、".join([f"{k}{v}" for k, v in wuxing.items() if v > 0])
+    
+    return f"""他是一位{gender}，来自{city}。
+他刚写下的困扰是：{trouble}
+他的基础数据：{day_gan}日主，当前大运{current_dayun}，五行分布：{wuxing_str}。
+
+请根据这些信息，用你作为老朋友的语气，给他三棍。只输出三句话。"""
 
 @app.post("/api/bazi")
 def get_bazi(data: BirthInput):
@@ -32,7 +71,6 @@ def get_bazi(data: BirthInput):
     
     yun = bazi.getYun(data.sex)
     daYunArr = yun.getDaYun()
-    
     current_age = 2026 - data.year
     current_dayun = None
     for dy in daYunArr:
@@ -58,20 +96,25 @@ def get_bazi(data: BirthInput):
         "trouble": data.trouble,
     }
     
-    prompt = build_prompt(bazi_data, user_input)
+    user_prompt = build_user_prompt(bazi_data, user_input)
     
-    gender_text = data.gender
-    city_text = data.city
-    trouble_text = data.trouble[:10]
-    
-    report = "老" + gender_text + "，你在" + city_text + "这么多年，是不是一直觉得自己能扛？\n\n"
-    report += "你跟我说" + trouble_text + "，但你有没有想过，你怕的从来不是那个领导，是你自己心里那关过不去。你一辈子都在用让别人舒服来换安全感，领导说个不字你就觉得天要塌了。可你真塌过吗？\n\n"
-    report += "你嘴上说压力大，其实你最怕的是失控。一旦事情没按你预想的走，你就开始焦虑。但你从来不说，你就闷着，闷到晚上睡不着，闷到胸口发闷。你以为你在忍，其实你是在躲，躲那个你不敢直视的事实：你不是不能扛，是不敢承认自己也会累。\n\n"
-    report += "今年是你该松一松的时候了。不是放弃工作，是别再拿别人的评价当尺子量自己。你那个新尝试，别管它现在多不起眼，继续做。它不是你逃避工作压力的借口，是你给自己留的一条后路。想好怎么走，咱后面细聊。"
+    try:
+        response = client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.9,
+            max_tokens=600,
+        )
+        free_report = response.choices[0].message.content.strip()
+    except Exception as e:
+        free_report = f"AI生成失败：{str(e)}"
     
     return {
         "bazi_data": bazi_data,
-        "free_report": report,
+        "free_report": free_report,
     }
 
 @app.get("/")
