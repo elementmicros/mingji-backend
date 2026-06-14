@@ -6,7 +6,7 @@ from openai import OpenAI
 app = FastAPI(title="明己后端")
 
 # DeepSeek API 配置
-DEEPSEEK_API_KEY = "sk-36078f4869434a1584d3f1bd180ce72e"
+DEEPSEEK_API_KEY = "sk-6960a486db784906a9e549dca793d390"
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url=DEEPSEEK_BASE_URL)
 
