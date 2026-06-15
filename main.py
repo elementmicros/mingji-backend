@@ -117,6 +117,18 @@ def get_bazi(data: BirthInput):
         "free_report": free_report,
     }
 
+from pydantic import BaseModel
+
+class VerifyInput(BaseModel):
+    code: str
+    expected: str
+
+@app.post("/api/verify_payment")
+def verify_payment(data: VerifyInput):
+    if data.code == data.expected:
+        return {"status": "success", "message": "验证成功"}
+    else:
+        return {"status": "fail", "message": "验证码错误"}
 @app.get("/")
 def root():
     return {"message": "明己后端运行中"}
