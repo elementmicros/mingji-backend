@@ -1,4 +1,4 @@
 fastapi
 uvicorn
 lunar-python
-openai
+requests
